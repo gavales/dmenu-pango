@@ -14,7 +14,7 @@ MIN/MAX is already defined (didn't redefine them).
  config.mk    |   4 +-
  drw.c        | 303 +++++++++++++--------------------------------------
  drw.h        |  17 ++-
- dwm.c        |  28 ++---
+ dmenu.c        |  28 ++---
  util.h       |   4 +
  6 files changed, 106 insertions(+), 252 deletions(-)
 
@@ -501,105 +501,154 @@ index 4bcd5ad..3d3a906 100644
  
  /* Map functions */
  void drw_map(Drw *drw, Window win, int x, int y, unsigned int w, unsigned int h);
-diff --git a/dwm.c b/dmenu.c
+diff --git a/dmenu.c b/dmenu.c
 index 9fd0286..cc180c4 100644
---- a/dwm.c
+--- a/dmenu.c
 +++ b/dmenu.c
-@@ -40,6 +40,7 @@
+@@ -15,6 +15,7 @@
  #include <X11/extensions/Xinerama.h>
- #endif /* XINERAMA */
+ #endif
  #include <X11/Xft/Xft.h>
 +#include <pango/pango.h>
  
  #include "drw.h"
  #include "util.h"
-@@ -55,7 +56,8 @@
- #define WIDTH(X)                ((X)->w + 2 * (X)->bw)
- #define HEIGHT(X)               ((X)->h + 2 * (X)->bw)
- #define TAGMASK                 ((1 << LENGTH(tags)) - 1)
--#define TEXTW(X)                (drw_fontset_getwidth(drw, (X)) + lrpad)
-+#define TEXTW(X)                (drw_font_getwidth(drw, (X), False) + lrpad)
-+#define TEXTWM(X)                (drw_font_getwidth(drw, (X), True) + lrpad)
+@@ -23,7 +24,8 @@
+ #define INTERSECT(x,y,w,h,r)  (MAX(0, MIN((x)+(w),(r).x_org+(r).width)  - MAX((x),(r).x_org)) \
+                              * MAX(0, MIN((y)+(h),(r).y_org+(r).height) - MAX((y),(r).y_org)))
+ #define LENGTH(X)             (sizeof X / sizeof X[0])
+-#define TEXTW(X)              (drw_fontset_getwidth(drw, (X)) + lrpad)
++#define TEXTW(X)              (drw_font_getwidth(drw, (X), False) + lrpad)
++#define TEXTWM(X)             (drw_font_getwidth(drw, (X), True) + lrpad)
  
  /* enums */
- enum { CurNormal, CurResize, CurMove, CurLast }; /* cursor */
-@@ -237,7 +239,7 @@ static void zoom(const Arg *arg);
+ enum { SchemeNorm, SchemeSel, SchemeOut, SchemeLast }; /* color schemes */
+@@ -82,10 +84,10 @@
+ 		n = mw - (promptw + inputw + TEXTW("<") + TEXTW(">"));
+ 	/* calculate which items will begin the next page and previous page */
+ 	for (i = 0, next = curr; next; next = next->right)
+-		if ((i += (lines > 0) ? bh : MIN(TEXTW(next->text), n)) > n)
++		if ((i += (lines > 0) ? bh : MIN(TEXTWM(next->text), n)) > n)
+ 			break;
+ 	for (i = 0, prev = curr; prev && prev->left; prev = prev->left)
+-		if ((i += (lines > 0) ? bh : MIN(TEXTW(prev->left->text), n)) > n)
++		if ((i += (lines > 0) ? bh : MIN(TEXTWM(prev->left->text), n)) > n)
+ 			break;
+ }
  
- /* variables */
- static const char broken[] = "broken";
--static char stext[256];
-+static char stext[512];
- static int screen;
- static int sw, sh;           /* X display screen geometry width, height */
- static int bh, blw = 0;      /* bar geometry */
-@@ -440,7 +442,7 @@ buttonpress(XEvent *e)
- 			arg.ui = 1 << i;
- 		} else if (ev->x < x + blw)
- 			click = ClkLtSymbol;
--		else if (ev->x > selmon->ww - TEXTW(stext))
-+		else if (ev->x > selmon->ww - TEXTWM(stext))
- 			click = ClkStatusText;
- 		else
- 			click = ClkWinTitle;
-@@ -697,16 +699,16 @@ void
- drawbar(Monitor *m)
- {
- 	int x, w, tw = 0;
--	int boxs = drw->fonts->h / 9;
--	int boxw = drw->fonts->h / 6 + 2;
-+	int boxs = drw->font->h / 9;
-+	int boxw = drw->font->h / 6 + 2;
- 	unsigned int i, occ = 0, urg = 0;
- 	Client *c;
- 
- 	/* draw status first so it can be overdrawn by tags later */
- 	if (m == selmon) { /* status is only drawn on selected monitor */
+@@ -123,7 +125,7 @@
+ 	else
  		drw_setscheme(drw, scheme[SchemeNorm]);
--		tw = TEXTW(stext) - lrpad + 2; /* 2px right padding */
--		drw_text(drw, m->ww - tw, 0, tw, bh, 0, stext, 0);
-+		tw = TEXTWM(stext) - lrpad + 2; /* 2px right padding */
-+		drw_text(drw, m->ww - tw, 0, tw, bh, 0, stext, 0, True);
- 	}
  
- 	for (c = m->clients; c; c = c->next) {
-@@ -718,7 +720,7 @@ drawbar(Monitor *m)
- 	for (i = 0; i < LENGTH(tags); i++) {
- 		w = TEXTW(tags[i]);
- 		drw_setscheme(drw, scheme[m->tagset[m->seltags] & 1 << i ? SchemeSel : SchemeNorm]);
--		drw_text(drw, x, 0, w, bh, lrpad / 2, tags[i], urg & 1 << i);
-+		drw_text(drw, x, 0, w, bh, lrpad / 2, tags[i], urg & 1 << i, False);
- 		if (occ & 1 << i)
- 			drw_rect(drw, x + boxs, boxs, boxw, boxw,
- 				m == selmon && selmon->sel && selmon->sel->tags & 1 << i,
-@@ -727,12 +729,12 @@ drawbar(Monitor *m)
+-	return drw_text(drw, x, y, w, bh, lrpad / 2, item->text, 0);
++	return drw_text(drw, x, y, w, bh, lrpad / 2, item->text, 0, True);
+ }
+ 
+ static void
+@@ -138,12 +140,12 @@
+ 
+ 	if (prompt && *prompt) {
+ 		drw_setscheme(drw, scheme[SchemeSel]);
+-		x = drw_text(drw, x, 0, promptw, bh, lrpad / 2, prompt, 0);
++		x = drw_text(drw, x, 0, promptw, bh, lrpad / 2, prompt, 0, True);
  	}
- 	w = blw = TEXTW(m->ltsymbol);
+ 	/* draw input field */
+ 	w = (lines > 0 || !matches) ? mw - x : inputw;
  	drw_setscheme(drw, scheme[SchemeNorm]);
--	x = drw_text(drw, x, 0, w, bh, lrpad / 2, m->ltsymbol, 0);
-+	x = drw_text(drw, x, 0, w, bh, lrpad / 2, m->ltsymbol, 0, False);
+-	drw_text(drw, x, 0, w, bh, lrpad / 2, text, 0);
++	drw_text(drw, x, 0, w, bh, lrpad / 2, text, 0, False);
  
- 	if ((w = m->ww - tw - x) > bh) {
- 		if (m->sel) {
- 			drw_setscheme(drw, scheme[m == selmon ? SchemeSel : SchemeNorm]);
--			drw_text(drw, x, 0, w, bh, lrpad / 2, m->sel->name, 0);
-+			drw_text(drw, x, 0, w, bh, lrpad / 2, m->sel->name, 0, False);
- 			if (m->sel->isfloating)
- 				drw_rect(drw, x + boxs, boxs, boxw, boxw, m->sel->isfixed, 0);
- 		} else {
-@@ -1543,10 +1545,10 @@ setup(void)
- 	sh = DisplayHeight(dpy, screen);
- 	root = RootWindow(dpy, screen);
- 	drw = drw_create(dpy, screen, root, sw, sh);
+ 	curpos = TEXTW(text) - TEXTW(&text[cursor]);
+ 	if ((curpos += lrpad / 2 - 1) < w) {
+@@ -161,15 +163,15 @@
+ 		w = TEXTW("<");
+ 		if (curr->left) {
+ 			drw_setscheme(drw, scheme[SchemeNorm]);
+-			drw_text(drw, x, 0, w, bh, lrpad / 2, "<", 0);
++			drw_text(drw, x, 0, w, bh, lrpad / 2, "<", 0, True);
+ 		}
+ 		x += w;
+ 		for (item = curr; item != next; item = item->right)
+-			x = drawitem(item, x, 0, MIN(TEXTW(item->text), mw - x - TEXTW(">")));
++			x = drawitem(item, x, 0, MIN(TEXTWM(item->text), mw - x - TEXTW(">")));
+ 		if (next) {
+ 			w = TEXTW(">");
+ 			drw_setscheme(drw, scheme[SchemeNorm]);
+-			drw_text(drw, mw - w, 0, w, bh, lrpad / 2, ">", 0);
++			drw_text(drw, mw - w, 0, w, bh, lrpad / 2, ">", 0, True);
+ 		}
+ 	}
+ 	drw_map(drw, win, 0, 0, mw, mh);
+@@ -535,7 +537,7 @@
+ 		if (!(items[i].text = strdup(buf)))
+ 			die("cannot strdup %u bytes:", strlen(buf) + 1);
+ 		items[i].out = 0;
+-		drw_font_getexts(drw->fonts, buf, strlen(buf), &tmpmax, NULL);
++		drw_font_getexts(drw->font, buf, strlen(buf), &tmpmax, NULL, True);
+ 		if (tmpmax > inputw) {
+ 			inputw = tmpmax;
+ 			imax = i;
+@@ -543,7 +545,7 @@
+ 	}
+ 	if (items)
+ 		items[i].text = NULL;
+-	inputw = items ? TEXTW(items[imax].text) : 0;
++	inputw = items ? TEXTWM(items[imax].text) : 0;
+ 	lines = MIN(lines, i);
+ }
+ 
+@@ -608,7 +610,7 @@
+ 	utf8 = XInternAtom(dpy, "UTF8_STRING", False);
+ 
+ 	/* calculate menu geometry */
+-	bh = drw->fonts->h + 2;
++	bh = drw->font->h + 2;
+ 	lines = MAX(lines, 0);
+ 	mh = (lines + 1) * bh;
+ #ifdef XINERAMA
+@@ -638,7 +640,7 @@
+ 					break;
+ 
+ 		x = info[i].x_org;
+-		y = info[i].y_org + (topbar ? 0 : info[i].height - mh);
++		y = info[i].y_org + 0; /* (topbar ? 0 : info[i].height - mh); */
+ 		mw = info[i].width;
+ 		XFree(info);
+ 	} else
+@@ -648,10 +650,10 @@
+ 			die("could not get embedding window attributes: 0x%lx",
+ 			    parentwin);
+ 		x = 0;
+-		y = topbar ? 0 : wa.height - mh;
++		y = 0; /* topbar ? 0 : wa.height - mh; */
+ 		mw = wa.width;
+ 	}
+-	promptw = (prompt && *prompt) ? TEXTW(prompt) - lrpad / 4 : 0;
++	promptw = (prompt && *prompt) ? TEXTWM(prompt) - lrpad / 4 : 0;
+ 	inputw = MIN(inputw, mw/3);
+ 	match();
+ 
+@@ -722,7 +724,7 @@
+ 		else if (!strcmp(argv[i], "-p"))   /* adds prompt to left of input field */
+ 			prompt = argv[++i];
+ 		else if (!strcmp(argv[i], "-fn"))  /* font or font set */
+-			fonts[0] = argv[++i];
++			strcpy(font, argv[++i]); /* font[0] = argv[++i]; */
+ 		else if (!strcmp(argv[i], "-nb"))  /* normal background color */
+ 			colors[SchemeNorm][ColBg] = argv[++i];
+ 		else if (!strcmp(argv[i], "-nf"))  /* normal foreground color */
+@@ -748,9 +750,9 @@
+ 		die("could not get embedding window attributes: 0x%lx",
+ 		    parentwin);
+ 	drw = drw_create(dpy, screen, root, wa.width, wa.height);
 -	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
 +	if (!drw_font_create(drw, font))
  		die("no fonts could be loaded.");
 -	lrpad = drw->fonts->h;
--	bh = drw->fonts->h + 2;
 +	lrpad = drw->font->h;
-+	bh = drw->font->h + 2;
- 	updategeom();
- 	/* init atoms */
- 	utf8string = XInternAtom(dpy, "UTF8_STRING", False);
+ 
+ #ifdef __OpenBSD__
+ 	if (pledge("stdio rpath", NULL) == -1)
 diff --git a/util.h b/util.h
 index f633b51..531ab25 100644
 --- a/util.h
